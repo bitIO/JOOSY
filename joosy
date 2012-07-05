@@ -1,0 +1,102 @@
+#!/bin/bash
+
+# @TODO
+# do some research on the use of 
+#    - Here-documentscreate 
+#    - scripts in the remote sites 
+# to improve/reduce code and ssh logins 
+
+if [ $# -eq 0 ];then
+    echo "
+    Incorrect number of parameters. Usage:
+        josh-syn -s source name -t target name  -m mode name
+    
+    Parameters:
+        -s : source distribution name (specified in conf file)
+        -t : target distribution name (specified in conf file)
+        -r : specify the rsync flags to be used (for files and database)
+          * clone
+          * update
+          * updateandclean
+
+    Both sites need to be defined in the sites config file"
+    exit 1
+fi
+
+# set this variable with your sites.conf file location
+SITESCONF=""
+if [[ -z $SITESCONF ]]; then
+  echo "
+    [FATAL] sites configuration file needs to be specified!! (do you think I'm a psychic?)
+  "
+fi
+
+ENVNAME="joosy.env"
+
+prefix=$(basename $0)
+mapdir=$(mktemp -dt ${prefix})
+#trap 'rm -r ${mapdir}' EXIT
+
+source joosy-hashtable
+source joosy-param-process
+
+showopts "$@"
+argstart=$?
+showargs "${@:$argstart}"
+
+SOURCE=$(get $ENVNAME "source")
+TARGET=$(get $ENVNAME "target")
+RSYNCMODE=$(get $ENVNAME "rsync")
+RSYNCCONF=1
+if [[ $RSYNCMODE == "" ]]; then
+  RSYNCMODE="update"
+  RSYNCCONF=0
+fi
+
+echo "  >> using $SOURCE as source"
+echo "  >> using $TARGET as target"
+echo "  >> rsync mode $RSYNCMODE"
+
+if [[ $SOURCE == $TARGET ]]; then
+  echo "\n  [ERROR] Are you kidding me? I'm not gonna perform a recursive syn. Check the names u've given me\n"
+  exit 2
+fi
+
+echo "Reading configuration of the source $SOURCE ..."
+grep $SOURCE $SITESCONF > /tmp/joosy-site-conf
+numberoflines=`cat /tmp/joosy-site-conf | wc -l | sed "s/\ //g"`
+if [[ $numberoflines == 0 ]]; then  
+  echo "  >> WRONG!! Source site name does not exist. Would u mind to type an existing one. Thanks ¬¬."
+  exit 3
+fi
+
+sed "s/^$SOURCE://" /tmp/joosy-site-conf > /tmp/joosy-site-vars
+while read line
+do
+    varname=`echo $line | cut -d":" -f1`
+    varvalue=`echo $line | cut -d":" -f2`
+
+    put "source" $varname "$varvalue"
+done < /tmp/joosy-site-vars
+
+echo "Reading configuration of the source $TARGET ..."
+grep $TARGET $SITESCONF > /tmp/joosy-site-conf
+numberoflines=`cat /tmp/joosy-site-conf | wc -l | sed "s/\ //g"`
+if [[ $numberoflines == 0 ]]; then  
+  echo "  >> WRONG!! Target site name does not exist. Would u mind to type an existing one. Thanks ¬¬."
+  exit 3
+fi
+
+sed "s/^$TARGET://" /tmp/joosy-site-conf > /tmp/joosy-site-vars
+while read line
+do
+    varname=`echo $line | cut -d":" -f1`
+    varvalue=`echo $line | cut -d":" -f2`
+
+    put "target" $varname "$varvalue"
+done < /tmp/joosy-site-vars
+
+source joosy-rsync
+source joosy-mysql
+
+#rm -r ${mapdir}

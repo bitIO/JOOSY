@@ -1,0 +1,47 @@
+#!/bin/bash
+SRCHOST=$(get source host)
+TRGHOST=$(get target host)
+
+SRCSTR=""
+TRGSTR=""
+if [[ $SRCHOST == "localhost" && $TRGHOST == "localhost" ]]; then
+	echo "Local sync in progress ...."
+	SRCSTR=$(get source root)
+	TRGSTR=$(get target root)
+elif [[ $SRCHOST == "localhost" && $TRGHOST != "localhost" ]]; then
+	echo "Sync mode is: upload ...."
+	SRCSTR=$(get source root)
+	TRGSTR="$(get target host-user)@$(get target host):$(get target root)"
+elif [[ $SRCHOST != "localhost" && $TRGHOST == "localhost" ]]; then
+	echo "Sync mode is: download ...."
+	SRCSTR="$(get source host-user)@$(get source host):$(get source root)"
+	TRGSTR=$(get target root)
+fi
+
+RSYNCFLAGS=""
+if [[ $RSYNCCONF == 1 ]]; then
+	case $RSYNCMODE in
+		clone )
+			echo "  >> rsync set to CLONE $SRCHOST to $TRGHOST"
+			RSYNCFLAGS="-zrlt --delete --exclude=configuration.php"
+			;;
+		update )
+			echo "  >> rsync set to UPDATE $SRCHOST to $TRGHOST"
+			RSYNCFLAGS="-zurlt --exclude=configuration.php"
+			;;
+		updateandclean )
+			echo "  >> rsync set to UPDATE & CLEAN $SRCHOST to $TRGHOST"
+			RSYNCFLAGS="-zurlt --delete --exclude=configuration.php"
+			;;
+		*)
+			echo "\n  [ERROR] WTF? I don't understand what u mean. Please, please, use clone|update|updateandclean\n"
+			exit 3
+			;;
+	esac
+else
+	RSYNCFLAGS=$(get target rsync)
+	echo "  >> rsync configured to use: $RSYNCFLAGS"
+fi
+echo "** you can see the rsync log at ${mapdir}/rsync.log **"
+echo "starting sync ..."
+rsync -v $RSYNCFLAGS $SRCSTR $TRGSTR | tee ${mapdir}/rsync.log

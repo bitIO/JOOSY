@@ -1,0 +1,14 @@
+#!/bin/bash
+
+put() {
+  [ "$#" != 3 ] && echo "  [ERROR] Missing value for $2" && exit 1
+  mapname=$1; key=$2; value=$3
+  [ -d "${mapdir}/${mapname}" ] || mkdir "${mapdir}/${mapname}"
+  echo $value >"${mapdir}/${mapname}/${key}"
+}
+
+get(){  
+  [ "$#" != 2 ] && exit 1 
+  mapname=$1; key=$2
+  cat "${mapdir}/${mapname}/${key}" 2>/dev/null
+}

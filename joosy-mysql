@@ -1,0 +1,33 @@
+#!/bin/bash
+
+SRCHOST=$(get source host)
+TRGHOST=$(get target host)
+
+SRCMYSQLPREFIX=$(get source mysql-prefix)
+TRGMYSQLPREFIX=$(get target mysql-prefix)
+
+SRCMYSQLSCHEMA=$(get source mysql-db)
+TRGMYSQLSCHEMA=$(get target mysql-db)
+
+SRCFILTERSQL="SELECT TABLE_NAME FROM TABLES WHERE TABLE_SCHEMA='$SRCMYSQLSCHEMA' AND TABLE_NAME LIKE '$SRCMYSQLPREFIX%'"
+TRGFILTERSQL="SELECT TABLE_NAME FROM TABLES WHERE TABLE_SCHEMA='$TRGMYSQLSCHEMA' AND TABLE_NAME LIKE '$TRGMYSQLPREFIX%'"
+
+SRCTMP=$(get source host-tmp)
+TRGTMP=$(get target host-tmp)
+
+SRCDB=$(get source mysql-db)
+TRGDB=$(get target mysql-db)
+
+SRCDUMP=""
+TRGDUMP=""
+
+
+if [[ $SRCHOST == "localhost" && $TRGHOST == "localhost" ]]; then
+	echo "NOT YET IMPLEMENTED"
+elif [[ $SRCHOST == "localhost" && $TRGHOST != "localhost" ]]; then
+	source josh-mysql-local2remote
+elif [[ $SRCHOST != "localhost" && $TRGHOST == "localhost" ]]; then
+	echo "NOT YET IMPLEMENTED"
+elif [[ $SRCHOST != "localhost" && $TRGHOST != "localhost" ]]; then
+	echo "NOT YET IMPLEMENTED"
+fi
