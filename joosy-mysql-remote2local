@@ -1,0 +1,80 @@
+#!/bin/bash
+mkdir ${mapdir}/dump
+timestamp=$(date +%Y%m%d%H%M%S)	
+
+echo "
+MySQL sync direction is REMOTE($TRGDB@$TRGHOST) ==> LOCAL($SRCDB@$SRCHOST)
+"
+
+# retrieve and generate remote dump skipping specified tables
+echo "Retrieving remote table names ..."
+
+# backup local data and update with remote
+
+
+echo $SRCFILTERSQL > ${mapdir}/josh-tables-filter.sql
+
+mysql -u  $(get source mysql-user) -h $(get source mysql-host) -p$(get source mysql-password) --skip-column-names information_schema < ${mapdir}/josh-tables-filter.sql > ${mapdir}/sourcetables.list
+SRCMYSQLDUMP="mysqldump -u  $(get source mysql-user) -h $(get source mysql-host) -p$(get source mysql-password) --add-drop-table $(get source mysql-db) "	
+SRCSKIPTABLES=$(get source mysql-skip)
+
+echo "Dumping local data ..."
+while read line; do
+	checkline="${line#*_};"
+	if grep -q $checkline <<<$SRCSKIPTABLES; then
+		echo "Table $line will be skipped as specified in conf"
+	else
+		$SRCMYSQLDUMP $line > ${mapdir}/dump/${line#*_}.sql.tmp
+		sed "s/$SRCMYSQLPREFIX/$TRGMYSQLPREFIX/g"  ${mapdir}/dump/${line#*_}.sql.tmp > ${mapdir}/dump/${line#*_}.sql
+		rm -f ${mapdir}/dump/${line#*_}.sql.tmp
+	fi		
+done < ${mapdir}/sourcetables.list
+
+timestamp=$(date +%Y%m%d%H%M%S)	
+tarname="$SRCHOST.${SRCMYSQLPREFIX%_*}.dump.tar.gz"
+echo "Creating tar $tarname ..."
+mkdir ${mapdir}/$timestamp
+
+# this might not be the most elegant way, but this leaves a record of what has been done
+echo "#!/bin/bash
+cd $TRGTMP/$timestamp/
+
+# make backup
+echo 'Backing up current database ...'
+echo \"$TRGFILTERSQL\" > $TRGTMP/josh-tables-filter.sql
+mkdir backup
+mysql -u  $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) --skip-column-names information_schema < $TRGTMP/josh-tables-filter.sql > tablelist
+while read line; do
+	mysqldump -u  $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) --add-drop-table $(get target mysql-db) \$line > backup/\$line.sql
+done < tablelist
+echo 'OK'
+echo 'Updating database ...'
+cat *.sql | mysql -u $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) $(get target mysql-db)
+echo 'OK'
+" >> ${mapdir}/$timestamp/sqlimport.sh
+tar zcf ${mapdir}/$timestamp/$tarname -C ${mapdir}/dump/ .
+
+echo "Sending to $TRGHOST ..."
+rsync -rt ${mapdir}/$timestamp $(get target host-user)@$(get target host):$TRGTMP/
+
+answer="n"
+echo "Updating target database. Are you sure? [y/N]"
+read answer
+case "$answer" in
+	"y" )
+		SSH="ssh $(get target host-user)@$(get target host)"
+		UNTAR="tar zxf $TRGTMP/$timestamp/$tarname -C $TRGTMP/$timestamp"
+		SQLCOMMAND="sh $TRGTMP/$timestamp/sqlimport.sh"
+		SSHCOMMAD="$SSH $UNTAR; $SQLCOMMAND;"
+		$SSHCOMMAD &> ${mapdir}/remote-update.log
+
+		echo "Target database updated. This is the log file (may be empty)"
+		cat ${mapdir}/remote-update.log
+		echo "-------------------------"
+		;;
+	* )
+		echo "Ok. No changes on target database. Bye."
+		exit 4
+		;;
+esac
+

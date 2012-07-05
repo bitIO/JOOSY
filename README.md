@@ -16,10 +16,14 @@ This is a tool I've created to help myself while developing joomla sites. It's n
 #Requirements
 
 * Linux / Mac OSX / Cywyng? (not tested)
-* rsync
+* rsync, tar, gzip
 * mysql (commnad line client)
 * … and some faith ;-)
 
+#What does JOOSY do?
+**
+Mainly, it synchronizes two environments (files and database). The files are synched using rsycn. Database, in the other hand, it's backed up and then replaced. I'm working to find a better and more elegant way but ...
+**
 #How to use JOOSY
 Firt thing you need to do is to define, at least, two different environments. You do that by adding them to the **sites.conf** file. Here is an example:
 
@@ -60,6 +64,8 @@ Every option is self-explained by its name. Just a few remmarks:
 * **rsync flags** is applied when the environment **is the target**, not the source.
 * I'd recommed not to sync configuration.php and that's why I've added the --exclude option
 * mysql-skip table list **ALWAYS** has to end with ;
+
+Once your done with the configuration file, you have to specify its location in the joosy script (line 27)
 
 And here is the command line
 
