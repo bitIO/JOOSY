@@ -1,8 +1,5 @@
 #!/bin/bash
 
-SRCHOST=$(get source host)
-TRGHOST=$(get target host)
-
 SRCMYSQLPREFIX=$(get source mysql-prefix)
 TRGMYSQLPREFIX=$(get target mysql-prefix)
 
@@ -22,12 +19,18 @@ SRCDUMP=""
 TRGDUMP=""
 
 
-if [[ $SRCHOST == "localhost" && $TRGHOST == "localhost" ]]; then
-	echo "NOT YET IMPLEMENTED"
-elif [[ $SRCHOST == "localhost" && $TRGHOST != "localhost" ]]; then
-	source josh-mysql-local2remote
-elif [[ $SRCHOST != "localhost" && $TRGHOST == "localhost" ]]; then
-	echo "NOT YET IMPLEMENTED"
-elif [[ $SRCHOST != "localhost" && $TRGHOST != "localhost" ]]; then
-	echo "NOT YET IMPLEMENTED"
-fi
+case $DIRECCTION in
+    LOCAL )    
+		echo "NOT YET IMPLEMENTED"
+        ;;
+    LOCAL2REMOTE )
+		source joosy-mysql-local2remote
+        ;;
+    REMOTE2LOCAL )
+		source joosy-mysql-remote2local
+        ;;
+    * )
+        echo "Invalid direction "
+        exit 3
+        ;;
+esac

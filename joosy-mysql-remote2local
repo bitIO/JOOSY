@@ -1,80 +1,88 @@
 #!/bin/bash
-mkdir ${mapdir}/dump
-timestamp=$(date +%Y%m%d%H%M%S)	
+mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/2remote
+mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/remote-dump
+mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/local-dump
 
 echo "
-MySQL sync direction is REMOTE($TRGDB@$TRGHOST) ==> LOCAL($SRCDB@$SRCHOST)
+MySQL sync direction is REMOTE($SRCDB@$SOURCEHOST) ==> LOCAL($TRGDB@$TARGETHOST)
 "
 
-# retrieve and generate remote dump skipping specified tables
-echo "Retrieving remote table names ..."
-
-# backup local data and update with remote
-
-
-echo $SRCFILTERSQL > ${mapdir}/josh-tables-filter.sql
-
-mysql -u  $(get source mysql-user) -h $(get source mysql-host) -p$(get source mysql-password) --skip-column-names information_schema < ${mapdir}/josh-tables-filter.sql > ${mapdir}/sourcetables.list
-SRCMYSQLDUMP="mysqldump -u  $(get source mysql-user) -h $(get source mysql-host) -p$(get source mysql-password) --add-drop-table $(get source mysql-db) "	
-SRCSKIPTABLES=$(get source mysql-skip)
-
-echo "Dumping local data ..."
-while read line; do
-	checkline="${line#*_};"
-	if grep -q $checkline <<<$SRCSKIPTABLES; then
-		echo "Table $line will be skipped as specified in conf"
-	else
-		$SRCMYSQLDUMP $line > ${mapdir}/dump/${line#*_}.sql.tmp
-		sed "s/$SRCMYSQLPREFIX/$TRGMYSQLPREFIX/g"  ${mapdir}/dump/${line#*_}.sql.tmp > ${mapdir}/dump/${line#*_}.sql
-		rm -f ${mapdir}/dump/${line#*_}.sql.tmp
-	fi		
-done < ${mapdir}/sourcetables.list
-
-timestamp=$(date +%Y%m%d%H%M%S)	
-tarname="$SRCHOST.${SRCMYSQLPREFIX%_*}.dump.tar.gz"
-echo "Creating tar $tarname ..."
-mkdir ${mapdir}/$timestamp
-
-# this might not be the most elegant way, but this leaves a record of what has been done
+# generate remote dump (all tables)
+SSH="ssh $(get source host-user)@$(get source host)"
 echo "#!/bin/bash
-cd $TRGTMP/$timestamp/
-
-# make backup
-echo 'Backing up current database ...'
-echo \"$TRGFILTERSQL\" > $TRGTMP/josh-tables-filter.sql
-mkdir backup
-mysql -u  $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) --skip-column-names information_schema < $TRGTMP/josh-tables-filter.sql > tablelist
+mkdir -p $SRCTMP/$TIMESTAMP/dump/
+echo \"$SRCFILTERSQL\" > $SRCTMP/$TIMESTAMP/josh-tables-filter.sql
+mysql -u  $(get source mysql-user) -h $(get source mysql-host) -p$(get source mysql-password) --skip-column-names information_schema < $SRCTMP/$TIMESTAMP/josh-tables-filter.sql > $SRCTMP/$TIMESTAMP/sourcetables.list
 while read line; do
-	mysqldump -u  $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) --add-drop-table $(get target mysql-db) \$line > backup/\$line.sql
-done < tablelist
-echo 'OK'
-echo 'Updating database ...'
-cat *.sql | mysql -u $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) $(get target mysql-db)
-echo 'OK'
-" >> ${mapdir}/$timestamp/sqlimport.sh
-tar zcf ${mapdir}/$timestamp/$tarname -C ${mapdir}/dump/ .
+	mysqldump -u  $(get source mysql-user) -h $(get source mysql-host) -p$(get source mysql-password) --add-drop-table $(get source mysql-db) $line > $SRCTMP/$TIMESTAMP/dump/\${line#*_}.sql
+done < $SRCTMP/$TIMESTAMP/sourcetables.list
+tarname=\"$SOURCEHOST.${SRCMYSQLPREFIX%_*}.dump.tar.gz\"
+echo \"Creating tar \$tarname ...\"
+tar zcf $SRCTMP/$TIMESTAMP/\$tarname -C $SRCTMP/$TIMESTAMP/dump/ .
+" >> $JOOSYLOCALFOLDER/$TIMESTAMP/2remote/sqldump.sh
 
-echo "Sending to $TRGHOST ..."
-rsync -rt ${mapdir}/$timestamp $(get target host-user)@$(get target host):$TRGTMP/
+echo "Copy sqldump script to remote host ..."
+rsync -rzt $JOOSYLOCALFOLDER/$TIMESTAMP/2remote/* $(get source host-user)@$(get source host):$SRCTMP/$TIMESTAMP/
+EXECSCRIPT="sh $SRCTMP/$TIMESTAMP/sqldump.sh"
 
+echo "Execute script in remote host ..."
+echo "(this is gonna take some time; what about a nice cup of tea?)"
+$SSH "$EXECSCRIPT"
+
+# retrieve remote dump
+echo "Retrieve remote dump ..."
+scp $(get source host-user)@$(get source host):$SRCTMP/$TIMESTAMP/$SOURCEHOST.${SRCMYSQLPREFIX%_*}.dump.tar.gz $JOOSYLOCALFOLDER/$TIMESTAMP/$SOURCEHOST.${SRCMYSQLPREFIX%_*}.dump.tar.gz
+tar zxf $JOOSYLOCALFOLDER/$TIMESTAMP/$SOURCEHOST.${SRCMYSQLPREFIX%_*}.dump.tar.gz -C $JOOSYLOCALFOLDER/$TIMESTAMP/remote-dump
+
+TRGSKIPTABLES=$(get target mysql-skip)
+for line in `ls $JOOSYLOCALFOLDER/$TIMESTAMP/remote-dump/`; do
+	checkline="${line};"
+	if grep -q $checkline <<<$TRGSKIPTABLES; then
+		echo "Table $line will be skipped as specified in conf"
+		rm $line
+	fi
+	sed "s/$SRCMYSQLPREFIX/$TRGMYSQLPREFIX/g"  $JOOSYLOCALFOLDER/$TIMESTAMP/remote-dump/$line > $JOOSYLOCALFOLDER/$TIMESTAMP/remote-dump/modified.$line
+	rm $JOOSYLOCALFOLDER/$TIMESTAMP/remote-dump/$line
+done
+
+if [[ $CREATEBACKUP == "yes" ]]; then
+	# backup local data and update with remote
+	echo "Retrieving local table names ..."
+	echo $TRGFILTERSQL > $JOOSYLOCALFOLDER/$TIMESTAMP/local-table-filter.sql
+
+	mysql -u  $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) --skip-column-names information_schema < $JOOSYLOCALFOLDER/$TIMESTAMP/local-table-filter.sql > $JOOSYLOCALFOLDER/$TIMESTAMP/dumptables.list
+	TRGMYSQLDUMP="mysqldump -u  $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) --add-drop-table $(get target mysql-db) "	
+
+	echo "Dumping local data ..."
+	while read line; do
+		$TRGMYSQLDUMP $line > $JOOSYLOCALFOLDER/$TIMESTAMP/local-dump/${line#*_}.sql
+	done < $JOOSYLOCALFOLDER/$TIMESTAMP/dumptables.list
+
+	tarname="target.mysql.backup.tar.gz"
+	echo "Creating tar $tarname ..."
+	tar zcf $JOOSYLOCALFOLDER/$TIMESTAMP/backup/$tarname -C $JOOSYLOCALFOLDER/$TIMESTAMP/local-dump/ .
+fi
+
+# apply remote dump
 answer="n"
 echo "Updating target database. Are you sure? [y/N]"
 read answer
 case "$answer" in
 	"y" )
-		SSH="ssh $(get target host-user)@$(get target host)"
-		UNTAR="tar zxf $TRGTMP/$timestamp/$tarname -C $TRGTMP/$timestamp"
-		SQLCOMMAND="sh $TRGTMP/$timestamp/sqlimport.sh"
-		SSHCOMMAD="$SSH $UNTAR; $SQLCOMMAND;"
-		$SSHCOMMAD &> ${mapdir}/remote-update.log
-
+		echo "Updating database ..."
+		for table in `ls $JOOSYLOCALFOLDER/$TIMESTAMP/remote-dump/modified.*.sql`; do
+			echo "Updating $table ..."
+			cat $table | mysql -u $(get target mysql-user) -h $(get target mysql-host) -p$(get target mysql-password) $(get target mysql-db) &>> $JOOSYLOCALFOLDER/$TIMESTAMP/local-update.log
+		done
 		echo "Target database updated. This is the log file (may be empty)"
-		cat ${mapdir}/remote-update.log
-		echo "-------------------------"
+		echo "----------- START OF local-update.log -----------
+		"
+		cat $JOOSYLOCALFOLDER/$TIMESTAMP/local-update.log
+		echo "
+----------- END OF local-update.log -----------"
 		;;
 	* )
 		echo "Ok. No changes on target database. Bye."
 		exit 4
 		;;
 esac
-

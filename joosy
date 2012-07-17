@@ -1,15 +1,42 @@
 #!/bin/bash
 
+prefix=$(basename $0)
+mapdir=$(mktemp -dt ${prefix})
+trap 'rm -r ${mapdir}' EXIT
+
+TIMESTAMP=$(date +%s)
+
 # @TODO
 # do some research on the use of 
 #    - Here-documentscreate 
 #    - scripts in the remote sites 
 # to improve/reduce code and ssh logins 
 
-if [ $# -eq 0 ];then
+# provides with the functionallity of hastables to store key value pairs
+source joosy-hashtable
+
+# used as default environment name
+ENVNAME="joosy.env"
+
+# local folder where to store everything
+JOOSYLOCALFOLDER=~/.joosy
+if [[ ! -d $JOOSYLOCALFOLDER ]]; then
+  mkdir -p ~/.joosy/
+fi
+
+# set this variable with your sites.conf file location
+SITESCONF="${JOOSYLOCALFOLDER}/sites.conf"
+if [[ ! -f $SITESCONF ]]; then
+  echo "
+    [FATAL] sites configuration file needs to be specified!! (do you think I'm a psychic?)
+  "
+fi
+
+# verify we have, at least, source and target specified
+if [ $# -lt 4 ];then
     echo "
     Incorrect number of parameters. Usage:
-        josh-syn -s source name -t target name  -m mode name
+        joosy -s source name -t target name  -m mode name -b yes|no
     
     Parameters:
         -s : source distribution name (specified in conf file)
@@ -18,34 +45,27 @@ if [ $# -eq 0 ];then
           * clone
           * update
           * updateandclean
+        -b : make backups during the process (default value is yes)
 
     Both sites need to be defined in the sites config file"
+
+    echo "
+    Available site names are:"
+    cat $SITESCONF | sed "s/:.*$//g" | grep -v ^# | grep -v ^$ | while read line; do 
+      if [[ -z $(get $ENVNAME $line ) ]]; then
+        put $ENVNAME "$line" "$line"
+        echo "         >> $line"
+      fi
+    done
     exit 1
 fi
 
-# set this variable with your sites.conf file location
-SITESCONF=""
-if [[ -z $SITESCONF ]]; then
-  echo "
-    [FATAL] sites configuration file needs to be specified!! (do you think I'm a psychic?)
-  "
-fi
-
-ENVNAME="joosy.env"
-
-prefix=$(basename $0)
-mapdir=$(mktemp -dt ${prefix})
-#trap 'rm -r ${mapdir}' EXIT
-
-source joosy-hashtable
+# process input parameters
 source joosy-param-process
-
 showopts "$@"
 argstart=$?
 showargs "${@:$argstart}"
 
-SOURCE=$(get $ENVNAME "source")
-TARGET=$(get $ENVNAME "target")
 RSYNCMODE=$(get $ENVNAME "rsync")
 RSYNCCONF=1
 if [[ $RSYNCMODE == "" ]]; then
@@ -53,50 +73,69 @@ if [[ $RSYNCMODE == "" ]]; then
   RSYNCCONF=0
 fi
 
+SOURCE=$(get $ENVNAME "source")
+TARGET=$(get $ENVNAME "target")
+
 echo "  >> using $SOURCE as source"
 echo "  >> using $TARGET as target"
 echo "  >> rsync mode $RSYNCMODE"
 
+# read sites configuration and verify it's not empty
+source joosy-read-site-conf
+readSiteConf $SOURCE "source"
+readSiteConf $TARGET "target"
+
+# @TODO 
+# crear una variable en la configuracion que nos indique un tiempo margen dentro del cual podamos reusar los backups
+
+#MAXAGE=$(get target mysql-maxage)
+#echo $TIMESTAMP
+#echo $((TIMESTAMP-MAXAGE))
+#exit
+
+# there's no sense on synchronize one site with itself
 if [[ $SOURCE == $TARGET ]]; then
   echo "\n  [ERROR] Are you kidding me? I'm not gonna perform a recursive syn. Check the names u've given me\n"
   exit 2
 fi
 
-echo "Reading configuration of the source $SOURCE ..."
-grep $SOURCE $SITESCONF > /tmp/joosy-site-conf
-numberoflines=`cat /tmp/joosy-site-conf | wc -l | sed "s/\ //g"`
-if [[ $numberoflines == 0 ]]; then  
-  echo "  >> WRONG!! Source site name does not exist. Would u mind to type an existing one. Thanks ¬¬."
-  exit 3
+# initialize variables
+SOURCEHOST=$(get source host)
+TARGETHOST=$(get target host)
+SOURCEROOT=$(get source root)
+TARGETROOT=$(get target root)
+SOURCETMP=$(get source host-tmp)
+TARGETTMP=$(get target host-tmp)
+DIRECCTION="---"
+DIRECCTIONDESC="----"
+CREATEBACKUP=$(get $ENVNAME createbackup)
+
+# should we make backups during the process (yes by default)
+if [[ -z $CREATEBACKUP ]]; then
+  CREATEBACKUP="yes"
+  mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/backup
 fi
 
-sed "s/^$SOURCE://" /tmp/joosy-site-conf > /tmp/joosy-site-vars
-while read line
-do
-    varname=`echo $line | cut -d":" -f1`
-    varvalue=`echo $line | cut -d":" -f2`
-
-    put "source" $varname "$varvalue"
-done < /tmp/joosy-site-vars
-
-echo "Reading configuration of the source $TARGET ..."
-grep $TARGET $SITESCONF > /tmp/joosy-site-conf
-numberoflines=`cat /tmp/joosy-site-conf | wc -l | sed "s/\ //g"`
-if [[ $numberoflines == 0 ]]; then  
-  echo "  >> WRONG!! Target site name does not exist. Would u mind to type an existing one. Thanks ¬¬."
-  exit 3
+# setup direcctions 
+if [[ $SOURCEHOST == "localhost" && $TARGETHOST == "localhost" ]]; then
+    DIRECCTION="LOCAL"
+    DIRECCTIONDESC="local"
+elif [[ $SOURCEHOST == "localhost" && $TARGETHOST != "localhost" ]]; then
+    DIRECCTION="LOCAL2REMOTE"
+    DIRECCTIONDESC="upload"    
+elif [[ $SOURCEHOST != "localhost" && $TARGETHOST == "localhost" ]]; then
+    DIRECCTION="REMOTE2LOCAL"
+    DIRECCTIONDESC="download"
 fi
 
-sed "s/^$TARGET://" /tmp/joosy-site-conf > /tmp/joosy-site-vars
-while read line
-do
-    varname=`echo $line | cut -d":" -f1`
-    varvalue=`echo $line | cut -d":" -f2`
-
-    put "target" $varname "$varvalue"
-done < /tmp/joosy-site-vars
-
-source joosy-rsync
+#source joosy-rsync
 source joosy-mysql
 
-#rm -r ${mapdir}
+echo "
+**************************************************************
+
+You can find the execution result under
+$JOOSYLOCALFOLDER/$TIMESTAMP
+
+**************************************************************
+"

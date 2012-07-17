@@ -76,6 +76,7 @@ And here is the command line
 			* clone 
 			* update (default mode)
 			* updateandclean
+		-b : make backups during the process (default value is yes)
 			
 -m parameter is optional and applies to how rsync of files is going to be executed. Let's take a look of what means each name:
 
@@ -90,6 +91,12 @@ Here is an example for an update
 and here how you would clone for the first time
 
 	joosy -s dev-env -t prod-env -m clone	
+
+#KNOWN PROBLEMS / ISSUES
+
+* `rsync: failed to set times on` This can occur when you don't own the directory. If this is happening to you, you should remove the -t flag. But **keep in mind** that by doing this, there will be a time penalty (ref [http://www.errorhelp.com/search/details/73579/rsync-failed-to-set-times-on-operation-not-permitted](http://))
+
+
 
 #TODOs
 (In order of what I consider important)

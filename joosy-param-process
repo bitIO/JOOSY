@@ -1,29 +1,36 @@
 #!/bin/bash
 showopts () {
-  while getopts "r: s: t:" optname
+  while getopts "r: s: t: b:" optname
     do
       case "$optname" in
         "r")
-          echo "rsync mode option has been specified" $OPTARG
+          echo "rsync mode is:" $OPTARG
           put $ENVNAME "rsync" $OPTARG
           ;;
         "s")
-          echo "Source site has been defined:" $OPTARG
+          echo "selected source site is:" $OPTARG
           put $ENVNAME "source" $OPTARG
           ;;
         "t")
-          echo "Target site has been defined:" $OPTARG
+          echo "selected target site is:" $OPTARG
           put $ENVNAME "target" $OPTARG
+          ;;
+        "b")
+          echo "create backups? " $OPTARG
+          put $ENVNAME "createbackup" $OPTARG
           ;;
         "?")
           echo "Unknown option $OPTARG"
+          exit 1
           ;;
         ":")
           echo "No argument value for option $OPTARG"
+          exit 1
           ;;
         *)
           # Should not occur
           echo "Unknown error while processing options"
+          exit 1
           ;;
       esac
     done

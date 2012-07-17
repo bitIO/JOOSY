@@ -1,47 +1,78 @@
 #!/bin/bash
-SRCHOST=$(get source host)
-TRGHOST=$(get target host)
-
-SRCSTR=""
-TRGSTR=""
-if [[ $SRCHOST == "localhost" && $TRGHOST == "localhost" ]]; then
-	echo "Local sync in progress ...."
-	SRCSTR=$(get source root)
-	TRGSTR=$(get target root)
-elif [[ $SRCHOST == "localhost" && $TRGHOST != "localhost" ]]; then
-	echo "Sync mode is: upload ...."
-	SRCSTR=$(get source root)
-	TRGSTR="$(get target host-user)@$(get target host):$(get target root)"
-elif [[ $SRCHOST != "localhost" && $TRGHOST == "localhost" ]]; then
-	echo "Sync mode is: download ...."
-	SRCSTR="$(get source host-user)@$(get source host):$(get source root)"
-	TRGSTR=$(get target root)
-fi
-
+SSHSOURCE="$(get source host-user)@$(get source host)"
+SSHTARGET="$(get target host-user)@$(get target host)"
+RSYNCSOURCEROOT=""
+RSYNCTARGETROOT=""
 RSYNCFLAGS=""
-if [[ $RSYNCCONF == 1 ]]; then
-	case $RSYNCMODE in
-		clone )
-			echo "  >> rsync set to CLONE $SRCHOST to $TRGHOST"
-			RSYNCFLAGS="-zrlt --delete --exclude=configuration.php"
-			;;
-		update )
-			echo "  >> rsync set to UPDATE $SRCHOST to $TRGHOST"
-			RSYNCFLAGS="-zurlt --exclude=configuration.php"
-			;;
-		updateandclean )
-			echo "  >> rsync set to UPDATE & CLEAN $SRCHOST to $TRGHOST"
-			RSYNCFLAGS="-zurlt --delete --exclude=configuration.php"
-			;;
-		*)
-			echo "\n  [ERROR] WTF? I don't understand what u mean. Please, please, use clone|update|updateandclean\n"
-			exit 3
-			;;
-	esac
-else
-	RSYNCFLAGS=$(get target rsync)
-	echo "  >> rsync configured to use: $RSYNCFLAGS"
+
+echo "Sync mode is: $DIRECCTIONDESC ...."
+# make backup of the target
+if [[ $CREATEBACKUP == "yes" ]]; then
+    case $DIRECCTION in
+        REMOTE2LOCAL|LOCAL)
+            echo "creating backup of the target $TARGETROOT(local) ..."
+            tar zcf $JOOSYLOCALFOLDER/$TIMESTAMP/backup/target.files.backup.tar.gz -C $TARGETROOT .
+        ;;
+        LOCAL2REMOTE )
+            echo "creating backup of the target $(get target root)(remote) ..."
+            ssh "$SSHTARGET" "mkdir -p $TARGETTMP/$TIMESTAMP && tar zcf $TARGETTMP/$TIMESTAMP/target.files.backup.tar.gz -C $(get target root) ."
+            echo "downloading backup to $JOOSYLOCALFOLDER/$TIMESTAMP/backup/"
+            scp $(get target host-user)@$(get target host):$TARGETTMP/$TIMESTAMP/target.files.backup.tar.gz $JOOSYLOCALFOLDER/$TIMESTAMP/backup/target.files.backup.tar.gz
+        ;;
+        * )
+            echo "  [ERROR] This is not good. I should NOT be here."
+            exit 3
+        ;;
+    esac
 fi
-echo "** you can see the rsync log at ${mapdir}/rsync.log **"
-echo "starting sync ..."
-rsync -v $RSYNCFLAGS $SRCSTR $TRGSTR | tee ${mapdir}/rsync.log
+
+# setup rsync source and host
+case $DIRECCTION in
+    LOCAL )    
+        RSYNCSOURCEROOT=$SOURCEROOT
+        RSYNCTARGETROOT=$TARGETROOT
+        ;;
+    LOCAL2REMOTE )
+        RSYNCSOURCEROOT=$SOURCEROOT
+        RSYNCTARGETROOT="$SSHTARGET:$TARGETROOT"
+        ;;
+    REMOTE2LOCAL )
+        RSYNCSOURCEROOT="$SSHSOURCE:$SOURCEROOT"
+        RSYNCTARGETROOT=$TARGETROOT
+        ;;
+    * )
+        echo "Invalid direction "
+        exit 3
+        ;;
+esac
+
+# configure rsync flags
+if [[ $RSYNCCONF == 1 ]]; then
+    case $RSYNCMODE in
+        clone )
+            echo "  >> rsync set to CLONE $SOURCEHOST to $TARGETHOST"
+            RSYNCFLAGS="-vzrlt --delete"
+            ;;
+        update )
+            echo "  >> rsync set to UPDATE $SOURCEHOST to $TARGETHOST"
+            RSYNCFLAGS="-vzurlt --exclude=configuration.php"
+            ;;
+        updateandclean )
+            echo "  >> rsync set to UPDATE & CLEAN $SOURCEHOST to $TARGETHOST"
+            RSYNCFLAGS="-vzurlt --delete --exclude=configuration.php"
+            ;;
+        * )
+            echo "  [ERROR] WTF? I don't understand what u mean. Please, please, use clone|update|updateandclean "
+            exit 3
+            ;;
+    esac
+else
+    RSYNCFLAGS=$(get target rsync)
+    echo "  >> rsync configured to use: $RSYNCFLAGS"
+fi
+
+echo "  >> you can review the rsync log at $JOOSYLOCALFOLDER/$TIMESTAMP/rsync.log"
+echo "
+starting sync ..."
+
+rsync $RSYNCFLAGS $RSYNCSOURCEROOT $RSYNCTARGETROOT | tee $JOOSYLOCALFOLDER/$TIMESTAMP/rsync.log
