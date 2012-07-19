@@ -4,7 +4,7 @@ A command line tool to perform synchronization between different joomla environm
 sandbox, development, stage, producction, ...
 
 Author  : Francisco Calle Moreno (http://www.fcallem.net)  
-Version : 0.0.1 (2012-07-05)   
+Version : 0.0.2 (2012-07-17)   
 
 Copyright 2012, Francisco Calle Moreno   
 
@@ -21,9 +21,8 @@ This is a tool I've created to help myself while developing joomla sites. It's n
 * … and some faith ;-)
 
 #What does JOOSY do?
-**
-Mainly, it synchronizes two environments (files and database). The files are synched using rsycn. Database, in the other hand, it's backed up and then replaced. I'm working to find a better and more elegant way but ...
-**
+** Mainly, it synchronizes two environments (files and database). The files are synched using rsycn. Database, in the other hand, it's backed up and then replaced. I'm working to find a better and more elegant way but ... **
+
 #How to use JOOSY
 Firt thing you need to do is to define, at least, two different environments. You do that by adding them to the **sites.conf** file. Here is an example:
 
@@ -46,7 +45,7 @@ Firt thing you need to do is to define, at least, two different environments. Yo
 	# REMOTE ENVIRONMENTS
 	#
 	prod-env:uri:mysite.com
-	prod-env:host:dabih.dreamhost.com
+	prod-env:host:remote.host.com
 	prod-env:host-user:myremoteuser
 	prod-env:host-tmp:/home/myremoteuser/tmp
 	prod-env:root:/home/myremoteuser/www/joomla/mysite/
@@ -55,7 +54,7 @@ Firt thing you need to do is to define, at least, two different environments. Yo
 	prod-env:mysql-db:joomla
 	prod-env:mysql-user:joomjoomla
 	prod-env:mysql-password:joomla
-	prod-env:mysql-prefix:mysite_
+	prod-env:mysql-prefix:mysiteprod_
 	prod-env:mysql-skip:users;usergroups;user_usergroup_map;user_profiles;user_notes;session;
 
 Every option is self-explained by its name. Just a few remmarks:
@@ -101,11 +100,8 @@ and here how you would clone for the first time
 #TODOs
 (In order of what I consider important)
 
-* Finish remote to local database sync
-* Finish local to local database sync 
 * Allow sync datbase tables, not the hole db
 * Generate and apply patchs to the configuration file to avoid the --exclude flag
-* Include remote to remote sync
 * …
 
 <strong style="color:red">Comments, ideas, suggestions, improvements and HELP are very very welcome</strong>
