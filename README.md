@@ -71,10 +71,7 @@ And here is the command line
 	joosy -s <source name> -t <target name>  -m <mode name>
 	    -s : source distribution name (specified in conf file) 
 	    -t : target distribution name (specified in conf file) 
-	    -r : specify the rsync flags to be used (for files and database) 
-			* clone 
-			* update (default mode)
-			* updateandclean
+	    -m : set what to sync: all, mysql database or just the file system (all|mysql|fs)
 		-b : make backups during the process (default value is yes)
 			
 -m parameter is optional and applies to how rsync of files is going to be executed. Let's take a look of what means each name:

@@ -1,0 +1,148 @@
+#!/bin/bash
+
+# create the temporary folder and set it to be removed once the execution finishes
+prefix=$(basename $0)
+mapdir=$(mktemp -dt ${prefix})
+trap 'rm -r ${mapdir}' EXIT
+
+# set some global variables needed during the hole
+TIMESTAMP=$(date +%s)
+ENVNAME="joosy.env"
+JOOSYLOCALFOLDER=~/.joosy
+SITESCONF="${JOOSYLOCALFOLDER}/sites.conf"
+
+# verify joosy local folder and sites configuration file exists
+if [[ ! -d $JOOSYLOCALFOLDER ]]; then
+  mkdir -p ~/.joosy/
+fi
+
+if [[ ! -f $SITESCONF ]]; then
+  echo "
+    [FATAL] sites configuration file needs to be specified!! (do you think I'm a psychic?)
+  "
+fi
+
+# process input params and stop in the temporary folder
+showopts "$@"
+argstart=$?
+showargs "${@:$argstart}"
+
+# verify we have, at least, source and target specified
+if [ $# -lt 4 ];then
+    echo "
+    Incorrect number of parameters. Usage:
+        joosy -s source name -t target name  -m all|mysql| files name -b yes|no
+    
+    Parameters:
+        -s : source distribution name (specified in conf file)
+        -t : target distribution name (specified in conf file)
+        -m : set what to sync: all, mysql database or just the file system
+        -b : make backups during the process (default value is yes)
+
+    Both sites need to be defined in the sites config file"
+
+    echo "
+    Available site names are:"
+    cat $SITESCONF | sed "s/:.*$//g" | grep -v ^# | grep -v ^$ | while read line; do 
+      if [[ -z $(get $ENVNAME $line ) ]]; then
+        put $ENVNAME "$line" "$line"
+        echo "         >> $line"
+      fi
+    done
+    exit 1
+fi
+
+SOURCE=$(get $ENVNAME "source")
+TARGET=$(get $ENVNAME "target")
+MODE=$(get $ENVNAME "mode")
+if [[ -z $MODE ]]; then
+  MODE="all"
+fi
+
+# read sites configuration and verify it's not empty
+readSiteConf $SOURCE "source"
+readSiteConf $TARGET "target"
+
+# there's no sense on synchronize one site with itself
+if [[ $SOURCE == $TARGET ]]; then
+  echo "\n  [ERROR] Are you kidding me? I'm not gonna perform a recursive syn. Check the names u've given me\n"
+  exit 2
+fi
+
+# initialize variables
+SOURCEHOST=$(get source host)
+TARGETHOST=$(get target host)
+SOURCEROOT=$(get source root)
+TARGETROOT=$(get target root)
+SOURCETMP=$(get source host-tmp)
+TARGETTMP=$(get target host-tmp)
+DIRECCTION="---"
+DIRECCTIONDESC="----"
+CREATEBACKUP=$(get $ENVNAME createbackup)
+
+# should we make backups during the process (yes by default)
+if [[ -z $CREATEBACKUP ]]; then
+  CREATEBACKUP="yes"
+fi
+
+# setup direcctions 
+if [[ $SOURCEHOST == "localhost" && $TARGETHOST == "localhost" ]]; then
+    DIRECCTION="LOCAL"
+    DIRECCTIONDESC="local"
+elif [[ $SOURCEHOST == "localhost" && $TARGETHOST != "localhost" ]]; then
+    DIRECCTION="LOCAL2REMOTE"
+    DIRECCTIONDESC="upload"    
+elif [[ $SOURCEHOST != "localhost" && $TARGETHOST == "localhost" ]]; then
+    DIRECCTION="REMOTE2LOCAL"
+    DIRECCTIONDESC="download"
+fi
+
+# create directory sctructure
+mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/
+mkdir $JOOSYLOCALFOLDER/$TIMESTAMP/backup
+mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/dump/source
+mkdir $JOOSYLOCALFOLDER/$TIMESTAMP/dump/target
+mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/2/source
+mkdir $JOOSYLOCALFOLDER/$TIMESTAMP/2/target
+mkdir $JOOSYLOCALFOLDER/$TIMESTAMP/log
+
+# initialize the remaining variables
+SOURCEMYSQLHOST=$(get source mysql-host)
+TARGETMYSQLHOST=$(get target mysql-host)
+SOURCEMYSQLDB=$(get source mysql-db)
+TARGETMYSQLDB=$(get target mysql-db)
+SOURCEMYSQLUSER=$(get source mysql-user)
+TARGETMYSQLUSER=$(get target mysql-user)
+SOURCEMYSQLPASS=$(get source mysql-password)
+TARGETMYSQLPASS=$(get target mysql-password)
+SRCMYSQLPREFIX=$(get source mysql-prefix)
+TRGMYSQLPREFIX=$(get target mysql-prefix)
+
+SOURCEFILTERSQL="SELECT TABLE_NAME FROM TABLES WHERE TABLE_SCHEMA='$SOURCEMYSQLDB' AND TABLE_NAME LIKE '$SRCMYSQLPREFIX%'"
+TARGETFILTERSQL="SELECT TABLE_NAME FROM TABLES WHERE TABLE_SCHEMA='$TARGETMYSQLDB' AND TABLE_NAME LIKE '$TRGMYSQLPREFIX%'"
+
+SOURCEUSERPASS="$(get source host-user)@$(get source host)"
+TARGETUSERPASS="$(get target host-user)@$(get target host)"
+
+echo "
+****************************************************************************
+
+ Ok, just to be clear. 
+ You want to sync $SOURCE($SOURCEHOST) to $TARGET($TARGETHOST) and sync in mode $MODE
+ Is that correct? (y/N)
+
+**************************************************************************** 
+"
+setupok="n"
+read setupok
+case "$setupok" in
+  "y" )
+    echo "Ok, cool B-). Lets go!!
+
+"
+    ;;
+  * )
+    echo "¬¬ seriously? Ok, I'm done."
+    exit 1
+  ;;
+esac

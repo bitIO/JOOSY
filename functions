@@ -1,0 +1,137 @@
+#!/bin/bash
+
+function put() {
+  [ "$#" != 3 ] && echo "  [ERROR] Missing value for $2" && exit 1
+  mapname=$1; key=$2; value=$3
+  [ -d "${mapdir}/${mapname}" ] || mkdir "${mapdir}/${mapname}"
+  echo $value >"${mapdir}/${mapname}/${key}"
+}
+
+function get(){  
+  [ "$#" != 2 ] && exit 1 
+  mapname=$1; key=$2
+  cat "${mapdir}/${mapname}/${key}" 2>/dev/null
+}
+
+function showopts () {
+  while getopts "m: s: t: b:" optname
+    do
+      case "$optname" in
+        "m")
+          echo "sync mode is:" $OPTARG
+          put $ENVNAME "mode" $OPTARG
+          ;;
+        "s")
+          echo "selected source site is:" $OPTARG
+          put $ENVNAME "source" $OPTARG
+          ;;
+        "t")
+          echo "selected target site is:" $OPTARG
+          put $ENVNAME "target" $OPTARG
+          ;;
+        "b")
+          echo "create backups? " $OPTARG
+          put $ENVNAME "createbackup" $OPTARG
+          ;;
+        "?")
+          echo "Unknown option $OPTARG"
+          exit 1
+          ;;
+        ":")
+          echo "No argument value for option $OPTARG"
+          exit 1
+          ;;
+        *)
+          # Should not occur
+          echo "Unknown error while processing options"
+          exit 1
+          ;;
+      esac
+    done
+  return $OPTIND
+}
+
+function showargs () {
+  for p in "$@"
+    do
+      echo "[$p]"
+    done
+}
+
+function readSiteConf() {
+  echo "Reading configuration of the source $1 ..."
+  grep $1 $SITESCONF > ${mapdir}/joosy-site-conf
+  numberoflines=`cat ${mapdir}/joosy-site-conf | wc -l | sed "s/\ //g"`
+  if [[ $numberoflines == 0 ]]; then  
+    echo "  >> WRONG!! Site name does not exist. Would u mind to type an existing one. Thanks ¬¬."
+    exit 3
+  fi
+
+  # store the configuration to be available for the rest of the process
+  sed "s/^$1://" ${mapdir}/joosy-site-conf | while read line; do
+      varname=`echo $line | cut -d":" -f1`
+      varvalue=`echo $line | cut -d":" -f2`
+      if [[ ! -z $varvalue ]]; then
+        put $2 $varname "$varvalue"
+      fi
+  done
+}
+
+function createBackupScript() {
+  scriptpath=$JOOSYLOCALFOLDER/$TIMESTAMP/backupscript
+  cat > $scriptpath <<EOF
+#!/bin/bash
+mkdir -p $1/$TIMESTAMP/backup/
+mkdir -p $1/$TIMESTAMP/dump/target/
+
+echo "  >> filesystem ..."
+tar zcf $1/$TIMESTAMP/backup/target.FILES.backup.tar.gz -C $TARGETROOT .
+
+echo "  >> database ..."
+echo "$TARGETFILTERSQL" > $1/$TIMESTAMP/dump/target-tables-filter.sql
+mysql -u $TARGETMYSQLUSER -h $TARGETMYSQLHOST -p$TARGETMYSQLPASS --skip-column-names information_schema < $1/$TIMESTAMP/dump/target-tables-filter.sql > $1/$TIMESTAMP/dump/target-tables.list
+
+while read targettablerow; do
+  echo "reading \$targettablerow ...."
+  mysqldump -u $TARGETMYSQLUSER -h $TARGETMYSQLHOST -p$TARGETMYSQLPASS --add-drop-table $TARGETMYSQLDB \$targettablerow > $1/$TIMESTAMP/dump/target/\$targettablerow.sql
+done < $1/$TIMESTAMP/dump/target-tables.list
+
+tar zcf $1/$TIMESTAMP/backup/target.MYSQL.backup.tar.gz -C $1/$TIMESTAMP/dump/target/ .
+EOF
+}
+
+function createMySQLDumpScript() {
+  scriptpath=$JOOSYLOCALFOLDER/$TIMESTAMP/dump/dumpscript
+cat > $scriptpath <<EOF
+mkdir -p $1/$TIMESTAMP/2/target/
+mkdir -p $1/$TIMESTAMP/dump/source/
+if [[ $# -eq 2 ]]; then
+  echo "$2" > $1/$TIMESTAMP/dump/src-tables-filter.sql
+fi
+mysql -u $SOURCEMYSQLUSER -h $SOURCEMYSQLHOST -p$SOURCEMYSQLPASS --skip-column-names information_schema < $1/$TIMESTAMP/dump/src-tables-filter.sql > $1/$TIMESTAMP/dump/source-tables.list
+SRCMYSQLDUMP="mysqldump -u $SOURCEMYSQLUSER -h $SOURCEMYSQLHOST -p$SOURCEMYSQLPASS --add-drop-table $SOURCEMYSQLDB " 
+SRCSKIPTABLES="$(get source mysql-skip)"
+echo "Dumping source data ..."
+while read line; do
+  checkline="\${line#*_};"
+  if grep -q \$checkline <<<\$SRCSKIPTABLES; then
+    echo "Table \$line will be skipped as specified in configuration."
+  else
+    \$SRCMYSQLDUMP \$line > $1/$TIMESTAMP/dump/source/\${line#*_}.sql.tmp
+    sed "s/$SRCMYSQLPREFIX/$TRGMYSQLPREFIX/g"  $1/$TIMESTAMP/dump/source/\${line#*_}.sql.tmp > $1/$TIMESTAMP/dump/source/\${line#*_}.sql
+    rm -f $1/$TIMESTAMP/dump/source/\${line#*_}.sql.tmp
+  fi    
+done < $1/$TIMESTAMP/dump/source-tables.list
+tar zcf $1/$TIMESTAMP/2/target/src.mysql.tar.gz -C $1/$TIMESTAMP/dump/source/ .
+EOF
+}
+
+function createMySQLImportScript() {
+  scriptpath=$JOOSYLOCALFOLDER/$TIMESTAMP/2/target/sqlimport.sh
+cat > $scriptpath <<EOF
+#!/bin/bash
+mkdir -p $1/$TIMESTAMP/dump/target/
+tar zxf $1/$TIMESTAMP/2/target/src.mysql.tar.gz -C $1/$TIMESTAMP/dump/target/
+cat $1/$TIMESTAMP/dump/target/*.sql | mysql -u $TARGETMYSQLUSER -h $TARGETMYSQLHOST -p$TARGETMYSQLPASS $TARGETMYSQLDB
+EOF
+}

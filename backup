@@ -1,0 +1,18 @@
+#!/bin/bash
+echo "creating backup of the target environment ..."
+case $DIRECCTION in
+    REMOTE2LOCAL|LOCAL)
+        createBackupScript $JOOSYLOCALFOLDER
+        sh $JOOSYLOCALFOLDER/$TIMESTAMP/backupscript
+    ;;
+    LOCAL2REMOTE )
+        createBackupScript $TARGETTMP
+        ssh $TARGETUSERPASS 'bash -s' < $JOOSYLOCALFOLDER/$TIMESTAMP/backupscript
+        echo "downloading backup to $JOOSYLOCALFOLDER/$TIMESTAMP/backup/"
+        rsync -vtz $TARGETUSERPASS:$TARGETTMP/$TIMESTAMP/backup/* $JOOSYLOCALFOLDER/$TIMESTAMP/backup/
+    ;;
+    * )
+        echo "  [ERROR] This is not good. I should NOT be here."
+        exit 3
+    ;;
+esac

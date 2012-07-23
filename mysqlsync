@@ -1,0 +1,64 @@
+#!/bin/bash
+
+case $DIRECCTION in
+    LOCAL )    
+        ;;
+    LOCAL2REMOTE )
+		echo "Dumping local database ..."
+		echo $SOURCEFILTERSQL > $JOOSYLOCALFOLDER/$TIMESTAMP/dump/source-tables-filter.sql
+		createMySQLDumpScript $JOOSYLOCALFOLDER
+		if [[ $? == 0 ]]; then
+			sh $JOOSYLOCALFOLDER/$TIMESTAMP/dump/dumpscript
+		else
+			echo "Error while creating MySQL dump script"
+			exit 3
+		fi
+        ;;
+    REMOTE2LOCAL )
+		echo "Dumping remote database ..."
+		if [[ $? == 0 ]]; then
+			createMySQLDumpScript $SOURCETMP "$SOURCEFILTERSQL"
+			ssh $SOURCEUSERPASS 'bash -s' < $JOOSYLOCALFOLDER/$TIMESTAMP/dump/dumpscript		
+		else
+			echo "Error while creating MySQL dump script"
+			exit 3
+		fi
+        ;;
+    * )
+        echo "Invalid direction "
+        exit 3
+        ;;
+esac
+
+answer="n"
+echo "Updating target database. Are you sure? [y/N]"
+read answer
+case "$answer" in
+	"y" )
+	;;
+	* )
+		echo "Ok. No changes on target database. Bye."
+		exit 4
+	;;
+esac
+
+case $DIRECCTION in
+    LOCAL )    
+        ;;
+    LOCAL2REMOTE )
+		echo " >> Updating target (remote) database ..."
+		createMySQLImportScript $TARGETTMP
+		rsync -rvtz --include 2 --include 2/target --include '2/target/**' --exclude '2/source/**' --exclude 'backup/**' --exclude 'dump/**' --exclude '**' $JOOSYLOCALFOLDER/$TIMESTAMP/. $TARGETUSERPASS:$TARGETTMP/$TIMESTAMP/
+		ssh $TARGETUSERPASS "sh $TARGETTMP/$TIMESTAMP/2/target/sqlimport.sh"
+        ;;
+    REMOTE2LOCAL )
+		echo " >> Updating target (local) database ..."
+		rsync $SOURCEUSERPASS:$SOURCETMP/$TIMESTAMP/2/target/* $JOOSYLOCALFOLDER/$TIMESTAMP/2/target/
+		tar zxf $JOOSYLOCALFOLDER/$TIMESTAMP/2/target/src.mysql.tar.gz -C $JOOSYLOCALFOLDER/$TIMESTAMP/dump/target/
+		cat $JOOSYLOCALFOLDER/$TIMESTAMP/dump/target/*.sql | mysql -u $TARGETMYSQLUSER -h $TARGETMYSQLHOST -p$TARGETMYSQLPASS $TARGETMYSQLDB
+        ;;
+    * )
+        echo "Invalid direction "
+        exit 3
+        ;;
+esac

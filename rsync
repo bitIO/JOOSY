@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# read rsync flags from the 
+RSYNCFLAGS=$(get target rsync)
+# setup rsync source and host
+case $DIRECCTION in
+    LOCAL )    
+        RSYNCSOURCEROOT=$SOURCEROOT
+        RSYNCTARGETROOT=$TARGETROOT
+        ;;
+    LOCAL2REMOTE )
+        RSYNCSOURCEROOT=$SOURCEROOT
+        RSYNCTARGETROOT="$TARGETUSERPASS:$TARGETROOT"
+        ;;
+    REMOTE2LOCAL )
+        RSYNCSOURCEROOT="$SOURCEUSERPASS:$SOURCEROOT"
+        RSYNCTARGETROOT=$TARGETROOT
+        ;;
+    * )
+        echo "Invalid direction "
+        exit 3
+        ;;
+esac
+echo "Sync in progess ..."
+rsync $RSYNCFLAGS $RSYNCSOURCEROOT $RSYNCTARGETROOT

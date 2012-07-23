@@ -1,141 +1,16 @@
 #!/bin/bash
 
-prefix=$(basename $0)
-mapdir=$(mktemp -dt ${prefix})
-trap 'rm -r ${mapdir}' EXIT
+source functions
+source setup
 
-TIMESTAMP=$(date +%s)
-
-# @TODO
-# do some research on the use of 
-#    - Here-documentscreate 
-#    - scripts in the remote sites 
-# to improve/reduce code and ssh logins 
-
-# provides with the functionallity of hastables to store key value pairs
-source joosy-hashtable
-
-# used as default environment name
-ENVNAME="joosy.env"
-
-# local folder where to store everything
-JOOSYLOCALFOLDER=~/.joosy
-if [[ ! -d $JOOSYLOCALFOLDER ]]; then
-  mkdir -p ~/.joosy/
+if [[ $CREATEBACKUP == "yes" ]]; then
+  source backup
 fi
 
-# set this variable with your sites.conf file location
-SITESCONF="${JOOSYLOCALFOLDER}/sites.conf"
-if [[ ! -f $SITESCONF ]]; then
-  echo "
-    [FATAL] sites configuration file needs to be specified!! (do you think I'm a psychic?)
-  "
+if [[ $MODE == "all" ||  $MODE == "fs" ]]; then
+  source rsync
 fi
 
-# verify we have, at least, source and target specified
-if [ $# -lt 4 ];then
-    echo "
-    Incorrect number of parameters. Usage:
-        joosy -s source name -t target name  -m mode name -b yes|no
-    
-    Parameters:
-        -s : source distribution name (specified in conf file)
-        -t : target distribution name (specified in conf file)
-        -r : specify the rsync flags to be used (for files and database)
-          * clone
-          * update
-          * updateandclean
-        -b : make backups during the process (default value is yes)
-
-    Both sites need to be defined in the sites config file"
-
-    echo "
-    Available site names are:"
-    cat $SITESCONF | sed "s/:.*$//g" | grep -v ^# | grep -v ^$ | while read line; do 
-      if [[ -z $(get $ENVNAME $line ) ]]; then
-        put $ENVNAME "$line" "$line"
-        echo "         >> $line"
-      fi
-    done
-    exit 1
+if [[ $MODE == "all" ||  $MODE == "mysql" ]]; then
+  source mysqlsync
 fi
-
-# process input parameters
-source joosy-param-process
-showopts "$@"
-argstart=$?
-showargs "${@:$argstart}"
-
-RSYNCMODE=$(get $ENVNAME "rsync")
-RSYNCCONF=1
-if [[ $RSYNCMODE == "" ]]; then
-  RSYNCMODE="update"
-  RSYNCCONF=0
-fi
-
-SOURCE=$(get $ENVNAME "source")
-TARGET=$(get $ENVNAME "target")
-
-echo "  >> using $SOURCE as source"
-echo "  >> using $TARGET as target"
-echo "  >> rsync mode $RSYNCMODE"
-
-# read sites configuration and verify it's not empty
-source joosy-read-site-conf
-readSiteConf $SOURCE "source"
-readSiteConf $TARGET "target"
-
-# @TODO 
-# crear una variable en la configuracion que nos indique un tiempo margen dentro del cual podamos reusar los backups
-
-#MAXAGE=$(get target mysql-maxage)
-#echo $TIMESTAMP
-#echo $((TIMESTAMP-MAXAGE))
-#exit
-
-# there's no sense on synchronize one site with itself
-if [[ $SOURCE == $TARGET ]]; then
-  echo "\n  [ERROR] Are you kidding me? I'm not gonna perform a recursive syn. Check the names u've given me\n"
-  exit 2
-fi
-
-# initialize variables
-SOURCEHOST=$(get source host)
-TARGETHOST=$(get target host)
-SOURCEROOT=$(get source root)
-TARGETROOT=$(get target root)
-SOURCETMP=$(get source host-tmp)
-TARGETTMP=$(get target host-tmp)
-DIRECCTION="---"
-DIRECCTIONDESC="----"
-CREATEBACKUP=$(get $ENVNAME createbackup)
-
-# should we make backups during the process (yes by default)
-if [[ -z $CREATEBACKUP ]]; then
-  CREATEBACKUP="yes"
-  mkdir -p $JOOSYLOCALFOLDER/$TIMESTAMP/backup
-fi
-
-# setup direcctions 
-if [[ $SOURCEHOST == "localhost" && $TARGETHOST == "localhost" ]]; then
-    DIRECCTION="LOCAL"
-    DIRECCTIONDESC="local"
-elif [[ $SOURCEHOST == "localhost" && $TARGETHOST != "localhost" ]]; then
-    DIRECCTION="LOCAL2REMOTE"
-    DIRECCTIONDESC="upload"    
-elif [[ $SOURCEHOST != "localhost" && $TARGETHOST == "localhost" ]]; then
-    DIRECCTION="REMOTE2LOCAL"
-    DIRECCTIONDESC="download"
-fi
-
-#source joosy-rsync
-source joosy-mysql
-
-echo "
-**************************************************************
-
-You can find the execution result under
-$JOOSYLOCALFOLDER/$TIMESTAMP
-
-**************************************************************
-"
